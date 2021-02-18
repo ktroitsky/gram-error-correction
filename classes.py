@@ -1,6 +1,4 @@
-""" TODO: - Try adding the word itself in the dependent token in syntactic 
-            trigrams (create a new csv with three rows: word, prep, word)
-          - Uncountable noun warning
+""" TODO: - Uncountable noun warning
           - Noun - verb agreement
           - Rewrite bigram checker
 """
@@ -13,9 +11,9 @@ import pickle
 import spacy
 import re
 from spacy.matcher import Matcher, DependencyMatcher
-from utils import arpabet_consonants
-from prep_synt_ngram_creator import load_tag_ngram_file, prep_pattern,
-                                    load_notag_ngram_filename
+from utils import arpabet_consonants, uncountables
+from prep_synt_ngram_creator import (load_tag_ngram_file, prep_pattern,
+                                    load_notag_ngram_filename)
 
 
 class Detector:
@@ -37,7 +35,7 @@ class Detector:
             return pickle.load(f)
 
     def __call__(self, text: str, vanilla_bigram_checker=False, 
-                 syntactic_ngram_checker=True, uncountable_noun_check=True):
+                 noun_phrase_checker=True, preposition_checker=True):
         """ Find errors in text sentence-wise
         """
         
@@ -50,15 +48,45 @@ class Detector:
             sent = sent.as_doc()                     # Convert each sentence into a Doc object
             sent_pack = {'original': sent.text, 'corrected': sent, 'corrections': []}           
 
-            if syntactic_ngram_checker:
-                sent_pack = self.syntactic_ngram_check(sent_pack)
+            if noun_phrase_checker:
+                sent_pack = self.noun_phrase_check(sent_pack)
 
-                if sent_pack['corrections'] == []:
-                    sent_pack['corrections'] = ['A -1 -1|||noop|||-NONE-|||REQUIRED|||-NONE-|||0']
-                print('S', sent.text)
-                print(*sent_pack['corrections'], sep='\n')
-                print("C", sent_pack['corrected'].text)
+            if preposition_checker:
+                sent_pack = self.preposition_check(sent_pack)
+
+
+            if sent_pack['corrections'] == []:
+                sent_pack['corrections'] = ['A -1 -1|||noop|||-NONE-|||REQUIRED|||-NONE-|||0']
+
+            print('S', sent.text)
+            print(*sent_pack['corrections'], sep='\n')
+            print("C", sent_pack['corrected'].text)
     
+    def uncountable_noun_check(self, chunk, chunk_listed, sent_pack):
+        if chunk.root.lemma_ in uncountables:
+            if chunk.root.tag_ == "NNS":
+                correction = f"A {chunk.root.i} {chunk.root.i+1}|||UncNoun|||{chunk.root.lemma_}|||REQUIRED|||-NONE-|||0"
+                sent_pack['corrected'] = self.token_replace(sent_pack['corrected'], chunk.root.lemma_, chunk.root.i)
+                sent_pack['corrections'].append(correction)
+                # chunk.root.i points to the index of the token in the whole Doc, not in the chunk (Span)
+                noun_idx_in_chunk = chunk.root.i - chunk.start     
+                chunk_listed[noun_idx_in_chunk] = chunk.root.lemma_
+
+            if 'a' in chunk_listed or 'an' in chunk_listed:
+                art_idx_in_chunk = (chunk_listed.index('a' if 'a' in chunk_listed 
+                                                            else 'the' if 'the' in chunk_listed else 'an'))
+
+                article_idx = chunk.start + art_idx_in_chunk
+                
+                correction = f"A {article_idx} {article_idx+1}|||IndArt:UncNoun||||||REQUIRED|||-NONE-|||0"
+                sent_pack['corrected'] = self.token_replace(sent_pack['corrected'], None, article_idx)
+                sent_pack['corrections'].append(correction)
+                del chunk_listed[art_idx_in_chunk]
+                
+
+        return chunk_listed, sent_pack
+            
+            
     def vanilla_bigram_check(self, text):
         """ Print all collocations that haven't been found in preprocessed bigram corpus
         """
@@ -72,76 +100,87 @@ class Detector:
     def syntactic_ngram_check(self, sent_pack):
         """ Checks the doc against a set of rules applied to syntactic n-grams
         """
-        sent_pack = self.noun_phrase_checker(sent_pack)
+        sent_pack = self.noun_phrase_check(sent_pack)
 
-        sent_pack = self.preposition_checker(sent_pack)
-            
+        sent_pack = self.preposition_check(sent_pack)
+
         return sent_pack
 
-    def noun_phrase_checker(self, sent_pack):
+    def noun_phrase_check(self, sent_pack):
         """ All methods that have to deal with problems contained only in noun phrase itself.
             These are;
             - Indefinite article - root noun agreement
             - Choice of a/an (calls another function)
             - Both a personal pronoun and an article in a single NP
         """
-        sent_pack = self.indef_art_choice_corr(sent_pack)
         for chunk in sent_pack['corrected'].noun_chunks:
-        
+
             # Create a list of tags of corresponding tokens with articles left in their text form
             chunk_listed = [token.tag_ if (token.text != 'a' and token.text != 'an'
                             and token.text != 'the') else token.text for token in chunk]  
+            
+            chunk_listed, sent_pack = self.uncountable_noun_check(chunk, chunk_listed, sent_pack)
 
-            # Checks there is an indefinite article & a plural root noun in the NP
-            if ('a' in chunk_listed or 'an' in chunk_listed) and 'NNS' in chunk_listed:
-                # Find the index of the article in the s-ce
-                article_idx = chunk.start + (chunk_listed.index('a' if 'a' in chunk_listed else 'an'))   
-                correction = f"A {article_idx} {article_idx+1}|||Art:NNS|||-NONE-|||REQUIRED|||-NONE-|||0"
-                sent_pack['corrections'].append(correction)
+            chunk_listed, sent_pack = self.indef_art_choice_corr(chunk, chunk_listed, sent_pack)
+            
+            sent_pack = self.ind_art_plural_noun_corr(chunk, chunk_listed, sent_pack)
+            
 
-            # Checks there is both an article and a personal pronoun in the NP
-            if ('a' in chunk_listed or 'an' in chunk_listed or 'the' in chunk_listed) and "PRP$" in chunk_listed:   
-                article_idx = chunk.start + (chunk_listed.index('a' if 'a' in chunk_listed else 'the' if 'the' in chunk_listed else 'an'))
-                correction = f"A {article_idx} {article_idx+1}|||Art:PRP$|||-NONE-|||REQUIRED|||-NONE-|||0"
-                sent_pack['corrections'].append(correction)
+            sent_pack = self.ind_art_pers_pronoun_corr(chunk, chunk_listed, sent_pack)
+            
 
         return sent_pack
 
+    def ind_art_pers_pronoun_corr(self, chunk, chunk_listed, sent_pack):
+        # Checks there is both an article and a personal pronoun in the NP
+        if ('a' in chunk_listed or 'an' in chunk_listed or 'the' in chunk_listed) and "PRP$" in chunk_listed:   
+            article_idx = chunk.start + (chunk_listed.index('a' if 'a' in chunk_listed 
+                                                            else 'the' if 'the' in chunk_listed else 'an'))
+            correction = f"A {article_idx} {article_idx+1}|||Art:PRP$|||-NONE-|||REQUIRED|||-NONE-|||0"
+            sent_pack['corrections'].append(correction)
+        return sent_pack
 
-    def indef_art_choice_corr(self, sent_pack):
+    def ind_art_plural_noun_corr(self, chunk, chunk_listed, sent_pack):
+        # Checks there is an indefinite article & a plural root noun in the NP
+        if ('a' in chunk_listed or 'an' in chunk_listed) and 'NNS' in chunk_listed:
+            # Find the index of the article in the s-ce
+            article_idx = chunk.start + (chunk_listed.index('a' if 'a' in chunk_listed else 'an'))   
+            correction = f"A {article_idx} {article_idx+1}|||Art:NNS|||-NONE-|||REQUIRED|||-NONE-|||0"
+            sent_pack['corrections'].append(correction)
+        return sent_pack
+
+    def indef_art_choice_corr(self, chunk, chunk_listed, sent_pack):
         """ Returns a sent_pack with added corrections concerning the choice
             between a/an articles
         """
-        for chunk in sent_pack['corrected'].noun_chunks:
+        if ('a' in chunk_listed or 'an' in chunk_listed):
+            article = ('a' if 'a' in chunk_listed else 'an')
+            art_idx_in_chunk = chunk_listed.index(article)
+            # The word that comes after the article in the chunk
+            next_word = chunk[art_idx_in_chunk+1].text      
+            # returns a list of possible pronunciations (lists of strings)              
+            phonetic = self.arpabet.get(next_word, None)                     
 
-            chunk_listed = [token.tag_ if (token.text != 'a' and token.text != 'an' 
-                            and token.text != 'the') else token.text for token in chunk]  
+            if phonetic:
+                new_article = None
+                if article == 'a' and phonetic[0][0] not in arpabet_consonants:    # i.e. 'a' + a vowel -> 'an'
+                    new_article = 'an'
+                if article == 'an' and phonetic[0][0] in arpabet_consonants:       # i.e. 'an' + a consonant -> 'a'
+                    new_article = 'a'
+                if new_article:
+                    article_idx_sent = chunk.start + art_idx_in_chunk
+                    correction = (f"A {article_idx_sent} {article_idx_sent + 1}"
+                                    + f"|||IndArt:Sound|||{new_article}|||REQUIRED|||-NONE-|||0")
+                    sent_pack['corrections'].append(correction)
 
-            if ('a' in chunk_listed or 'an' in chunk_listed):
-                article = ('a' if 'a' in chunk_listed else 'an')
-                art_idx_in_chunk = chunk_listed.index(article)
-                # The word that comes after the article in the chunk
-                next_word = chunk[art_idx_in_chunk+1].text      
-                # returns a list of possible pronunciations (lists of strings)              
-                phonetic = self.arpabet.get(next_word, None)                     
+                    sent_pack['corrected'] = self.token_replace(sent_pack['corrected'], 
+                                                                new_article, article_idx_sent)
+                    chunk_listed[art_idx_in_chunk] = new_article
+                    
+    
+        return chunk_listed, sent_pack
 
-                if phonetic:
-                    new_article = None
-                    if article == 'a' and phonetic[0][0] not in arpabet_consonants:    # i.e. 'a' + a vowel -> 'an'
-                        new_article = 'an'
-                    if article == 'an' and phonetic[0][0] in arpabet_consonants:       # i.e. 'an' + a consonant -> 'a'
-                        new_article = 'a'
-                    if new_article:
-                        correction = (f"A {chunk.start + art_idx_in_chunk} {chunk.start + art_idx_in_chunk + 1}"
-                                        + f"|||IndArt:Sound|||{new_article}|||REQUIRED|||-NONE-|||0")
-                        sent_pack['corrections'].append(correction)
-
-                        sent_pack['corrected'] = self.token_replace(sent_pack['corrected'], 
-                                                                    new_article, chunk.start + art_idx_in_chunk)
-
-        return sent_pack
-
-    def preposition_checker(self, sent_pack):
+    def preposition_check(self, sent_pack):
         """ Return a list of m2 corrections.
             Detects and corrects errors connected with the choice of preposition.
             It is done with the help of two datasets:
@@ -196,7 +235,8 @@ class Detector:
                     # FOR FUTURE: can suggest a few prepositions, actually (TODO)
                     most_relevant = relevant_tag_keys[-1]
                 else:
-                    # Taking a random first trigram. Possible to change by choosing the one with the largest count (TODO)
+                    # Taking a random first trigram. Possible to change by choosing 
+                    # the one with the largest count (TODO)
                     most_relevant = relevant_notag_keys[0]                              
 
                 correct_prep = most_relevant.split(' ')[1]
@@ -212,7 +252,10 @@ class Detector:
         """ Returns a new Doc with token at index 'offset' changed to 'token'.
         """
         listed_sentence = [token.text for token in doc]
-        listed_sentence[offset] = token
+        if token:
+            listed_sentence[offset] = token
+        else:
+            del listed_sentence[offset]
         corrected = self.nlp(' '.join(listed_sentence))
 
         return corrected
@@ -232,5 +275,7 @@ if __name__ == "__main__":
     text = ('Since each among us was a faggot... I think he fought by war \
     and winked by him and die by vain. He was unoccupied by the situation. \
     There were an kids, but I didn\'t like them. There were kilograms from cocaine.')
+    text = "I have many evidences for wrong advices of my neighbours. Their kindnesses lacks morality. I have a advices to you"
+    
 
     detector(text)

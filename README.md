@@ -1,2 +1,2 @@
-# gram_error_correction
+# Grammatical error correction
 Core for paper

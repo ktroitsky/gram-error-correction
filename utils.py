@@ -45,3 +45,10 @@ uncountables = ["access", "accommodation", "adulthood", "advertising", "advice",
                  "sleep", "smoke", "smoking", "soap", "software", "sorrow", "speed",
                  "spelling", "steam", "strength", "stupidity", "success", "sugar",
                  "sunshine", "symmetry"]
+
+uncountable_change = {
+        "those": "that",
+        "these": "this",
+        "many": "much",
+        "few": "little"
+}

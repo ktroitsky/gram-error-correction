@@ -7,7 +7,9 @@ import spacy
 from spacy.matcher import DependencyMatcher
 from spacy import displacy
 import csv
+import os
 import datetime
+import time
 
 CSV_TAG_FILENAME = "/home/cyril/Desktop/Python/projects/error_detection/data/trigrams_synt.csv"
 CSV_NOTAG_FILENAME = "/home/cyril/Desktop/Python/projects/error_detection/data/trigrams_notag.csv"
@@ -48,7 +50,7 @@ def match_prep_pattern(doc, nlp, tag_matches, notag_matches):
     matcher.add("prep", [prep_pattern])
     count = 0
     for match in matcher(doc):               # Iterate through all of the matches and add 1 to its count in the dictionary
-        if count % 500 == 0:
+        if count % 1000 == 0:
             print(f"Processing match # {count}")
         indices = match[1]
 
@@ -110,10 +112,47 @@ def load_notag_ngram_filename(ngrams_filename):
         reader = csv.reader(f)
         for line in reader:
             entry = ' '.join(line)
+            matches.add(entry)
 
     return matches
 
 
 
 if __name__ == "__main__":
-    main(TRAIN_TEXT_FILENAME, CSV_TAG_FILENAME, CSV_NOTAG_FILENAME)
+    data_path = '/home/cyril/Desktop/Python/projects'
+    logs_path = '/home/cyril/Desktop/Python/projects/error_detection/data/trigrams_logs'
+    os.chdir(r'/home/cyril/Desktop/Python/projects/words_check')
+    textfiles = [textfile for textfile in os.listdir() if textfile[-4:] == '.txt']
+    # textfiles = ['fiesta.txt', 'paradise_lost.txt', 'the_two_towers.txt']
+    processed = ['fiesta.txt', 'paradise_lost.txt', 'the_two_towers.txt']
+
+    tag_matches = load_tag_ngram_file(CSV_TAG_FILENAME)
+    notag_matches = load_notag_ngram_filename(CSV_NOTAG_FILENAME)
+    
+    nlp = spacy.load("en_core_web_sm")
+    starttime = time.time()
+    for textfile in textfiles:
+        if textfile in processed:
+            continue
+        with open(logs_path, 'a') as logs:
+            timestring = time.strftime('%H:%M:%S')
+            logs.write(f"Started processing {textfile}. Time: {timestring}\n")
+        with open(textfile, 'r', encoding='utf8') as f:
+            text = f.read()
+        text_len = len(text)
+        text_chunks = list(range(0, text_len, 800000))
+        text_chunks.append(text_len)
+        for i in range(len(text_chunks) - 1):
+            doc = nlp(text[text_chunks[i]:text_chunks[i+1]])
+            tag_matches, notag_matches = match_prep_pattern(doc, nlp, tag_matches, notag_matches)
+            save_tag_ngrams(tag_matches, CSV_TAG_FILENAME)
+            save_notag_ngrams(notag_matches, CSV_NOTAG_FILENAME)
+
+            
+            
+    with open(logs_path, 'a') as logs:
+        timestring = time.strftime('%H:%M:%S')
+        logs.write(f"Finished processing all files. Time: {timestring}.\n"
+           +  f"Total time spent in seconds: {time.time() - starttime}")
+        
+

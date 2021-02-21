@@ -102,7 +102,7 @@ def load_tag_ngram_file(ngrams_filename):
         for line in reader:
             key = ' '.join(line[:3])
             matches[key] = int(line[3])
-    
+    assert matches, "Tag matches are empty"
     return matches
 
 def load_notag_ngram_filename(ngrams_filename):
@@ -113,7 +113,7 @@ def load_notag_ngram_filename(ngrams_filename):
         for line in reader:
             entry = ' '.join(line)
             matches.add(entry)
-
+    assert matches, "Notag matches are empty"
     return matches
 
 
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     logs_path = '/home/cyril/Desktop/Python/projects/error_detection/data/trigrams_logs'
     os.chdir(r'/home/cyril/Desktop/Python/projects/words_check')
     textfiles = [textfile for textfile in os.listdir() if textfile[-4:] == '.txt']
-    # textfiles = ['fiesta.txt', 'paradise_lost.txt', 'the_two_towers.txt']
+    textfiles = ['twitter.txt', 'on_the_road.txt', 'the_goldfinch.txt', 'under_the_dome.txt', "the_return_of_the_king.txt"]
     processed = ['fiesta.txt', 'paradise_lost.txt', 'the_two_towers.txt']
 
     tag_matches = load_tag_ngram_file(CSV_TAG_FILENAME)
@@ -154,5 +154,4 @@ if __name__ == "__main__":
         timestring = time.strftime('%H:%M:%S')
         logs.write(f"Finished processing all files. Time: {timestring}.\n"
            +  f"Total time spent in seconds: {time.time() - starttime}")
-        
-
+    

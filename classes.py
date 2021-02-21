@@ -69,7 +69,8 @@ class Detector:
 
         if chunk_pack['chunk'].root.lemma_ in uncountables:
             if chunk_pack['chunk'].root.tag_ == "NNS":
-                correction = f"A {chunk_pack['chunk'].root.i} {chunk_pack['chunk'].root.i+1}|||UncNoun|||{chunk_pack['chunk'].root.lemma_}|||REQUIRED|||-NONE-|||0"
+                correction = (f"A {chunk_pack['chunk'].root.i} {chunk_pack['chunk'].root.i+1}"
+                              + "|||UncNoun|||{chunk_pack['chunk'].root.lemma_}|||REQUIRED|||-NONE-|||0")
                 sent_pack['corrected'] = self.token_replace(sent_pack['corrected'], chunk_pack['chunk'].root.lemma_, chunk_pack['chunk'].root.i)
                 sent_pack['corrections'].append(correction)
                 # chunk.root.i points to the index of the token in the whole Doc, not in the chunk (Span)
@@ -112,8 +113,6 @@ class Detector:
                     chunk_pack['chunk'] = new_chunk
                     
             
-                
-
         return chunk_pack, sent_pack
             
             
@@ -154,7 +153,7 @@ class Detector:
         return sent_pack
 
     def ind_art_pers_pronoun_corr(self, chunk_pack, chunk_listed, sent_pack):
-        # Checks there is both an article and a personal pronoun in the NP
+        """Checks there is both an article and a personal pronoun in the NP"""
         if ('a' in chunk_listed or 'an' in chunk_listed or 'the' in chunk_listed) and "PRP$" in chunk_listed:   
             article_idx = chunk_pack['start'] + (chunk_listed.index('a' if 'a' in chunk_listed 
                                                             else 'the' if 'the' in chunk_listed else 'an'))
@@ -163,7 +162,7 @@ class Detector:
         return sent_pack
 
     def ind_art_plural_noun_corr(self, chunk_pack, chunk_listed, sent_pack):
-        # Checks there is an indefinite article & a plural root noun in the NP
+        """Checks there is an indefinite article & a plural root noun in the NP"""
         if ('a' in chunk_listed or 'an' in chunk_listed) and 'NNS' in chunk_listed:
             # Find the index of the article in the s-ce
             article_idx = chunk_pack['start'] + (chunk_listed.index('a' if 'a' in chunk_listed else 'an'))   
@@ -274,7 +273,6 @@ class Detector:
         
         return sent_pack
 
-
     def token_replace(self, doc, token:str, offset:int):
         """ Returns a new Doc with token at index 'offset' changed to 'token'.
         """
@@ -288,8 +286,7 @@ class Detector:
         return corrected
             
 def create_bigrams(text):
-    """ Return a dictionaty of bigram counts
-    """
+    """ Return a dictionaty of bigram counts"""
     twit_tokens = nltk.word_tokenize(text)
     bigrams = ngrams(twit_tokens, 2)
     bigrams = dict(Counter(bigrams))
@@ -301,7 +298,7 @@ if __name__ == "__main__":
 
     text = ('Since each among us was a faggot... I think he fought by war \
 and winked by him and die by vain. He was unoccupied by the situation. \
-There were an kids, but I didn\'t like them. There were kilograms from cocaine.\
+There were an kids, but I didn\'t like them. There were pounds from cocaine.\
 I have many evidences for wrong advices of my neighbours. Their kindnesses lacks morality. I have a advices to you')
     
     # text = "There were an kids, but I didn't like them."

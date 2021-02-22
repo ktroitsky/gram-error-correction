@@ -35,7 +35,7 @@ class Detector:
             return pickle.load(f)
 
     def __call__(self, text: str, vanilla_bigram_checker=False, 
-                 noun_phrase_checker=True, preposition_checker=True):
+                 noun_phrase_checker=True, preposition_checker=True, save_file=None):
         """ Find errors in text sentence-wise
         """
         
@@ -58,9 +58,14 @@ class Detector:
             if sent_pack['corrections'] == []:
                 sent_pack['corrections'] = ['A -1 -1|||noop|||-NONE-|||REQUIRED|||-NONE-|||0']
 
-            print('S', sent.text)
-            print(*sent_pack['corrections'], sep='\n')
-            print("C", sent_pack['corrected'].text)
+            if save_file:
+                with open(save_file, 'a') as f:
+                    f.write('S ' + sent_pack['original'] + '\n')
+                    f.write('\n'.join(sent_pack['corrections']))
+            else:
+                print('S', sent.text)
+                print(*sent_pack['corrections'], sep='\n')
+                print("C", sent_pack['corrected'].text)
     
     def uncountable_noun_check(self, chunk_pack, sent_pack):
         """ Corrects all mistakes connected with uncountable nouns in an NP (chunk)

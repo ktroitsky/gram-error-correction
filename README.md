@@ -1,2 +1,2 @@
 # Grammatical error correction
-Core for paper
+Core for paper "METHODS OF AUTOMATED GRAMMATICAL ERROR DETECTION IN THE ENGLISH-LANGUAGE TEXT"
